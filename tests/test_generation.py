@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -60,6 +62,26 @@ class GenerationTests(unittest.TestCase):
             self.assertIn("package manager conflict", "\n".join(facts.warnings))
             self.assertNotIn("pnpm test", md)
             self.assertNotIn("npm test", md)
+
+    def test_package_manager_field_conflicts_with_stale_lockfile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_json(
+                root / "package.json",
+                {
+                    "packageManager": "pnpm@9.0.0",
+                    "scripts": {"test": "vitest"},
+                },
+            )
+            (root / "package-lock.json").write_text("{}", encoding="utf-8")
+
+            facts = scan_repo(root)
+            md = render_agents_md(facts)
+
+            self.assertEqual(facts.commands, ())
+            self.assertIn("packageManager declares pnpm", "\n".join(facts.warnings))
+            self.assertNotIn("npm test", md)
+            self.assertNotIn("pnpm test", md)
 
     def test_package_json_with_utf8_bom_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -246,7 +268,7 @@ go 1.22
             self.assertIn("+- Test: `npm test`", stdout.getvalue())
             self.assertEqual(stderr.getvalue(), "")
 
-    def test_cli_init_writes_by_default(self) -> None:
+    def test_cli_init_previews_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_json(root / "package.json", {"scripts": {"build": "tsc"}})
@@ -256,8 +278,53 @@ go 1.22
                 exit_code = main(["init", str(root)])
 
             self.assertEqual(exit_code, 0)
+            self.assertFalse((root / "AGENTS.md").exists())
+            self.assertIn("+- Build: `npm run build`", stdout.getvalue())
+
+    def test_cli_init_write_creates_missing_agents_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_json(root / "package.json", {"scripts": {"build": "tsc"}})
+            stdout = io.StringIO()
+
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(["init", str(root), "--write"])
+
+            self.assertEqual(exit_code, 0)
             self.assertTrue((root / "AGENTS.md").exists())
             self.assertIn("- Build: `npm run build`", (root / "AGENTS.md").read_text())
+
+    def test_cli_init_write_requires_force_to_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_json(root / "package.json", {"scripts": {"build": "tsc"}})
+            target = root / "AGENTS.md"
+            target.write_text("manual rules\n", encoding="utf-8")
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr):
+                exit_code = main(["init", str(root), "--write"])
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(target.read_text(encoding="utf-8"), "manual rules\n")
+            self.assertIn("--write --force", stderr.getvalue())
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                forced = main(["init", str(root), "--write", "--force"])
+
+            self.assertEqual(forced, 0)
+            self.assertIn("- Build: `npm run build`", target.read_text(encoding="utf-8"))
+
+    def test_package_can_run_as_module(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "tiny_agents_md", "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(".", result.stdout)
 
     def test_cli_loop_writes_and_converges(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -31,9 +31,15 @@ Use this skill to orchestrate the deterministic `tiny-agents-md` CLI. Do not man
 4. If `loop` is unavailable in an older checkout, fall back to:
 
    ```bash
-   tiny-agents-md init . --write
-   tiny-agents-md doctor .
    tiny-agents-md init . --dry-run
+   tiny-agents-md init . --write
+   tiny-agents-md doctor . --explain
+   ```
+
+   If `AGENTS.md` already exists and the user asked to refresh it, use:
+
+   ```bash
+   tiny-agents-md init . --write --force
    ```
 
 5. Report whether the loop converged, the doctor score, and whether `AGENTS.md` changed.

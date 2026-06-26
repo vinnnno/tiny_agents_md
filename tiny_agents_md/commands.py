@@ -116,6 +116,7 @@ def _detect_js_package_manager(
     package_json: dict,
     warnings: list[str],
 ) -> str | None:
+    declared = _declared_package_manager(package_json)
     lockfiles = {
         "pnpm": root / "pnpm-lock.yaml",
         "yarn": root / "yarn.lock",
@@ -129,16 +130,29 @@ def _detect_js_package_manager(
         )
         return None
 
+    if declared and present and declared != present[0]:
+        warnings.append(
+            "package manager conflict: "
+            f"packageManager declares {declared} but {lockfiles[present[0]].name} is present"
+        )
+        return None
+
+    if declared:
+        return declared
+
     if len(present) == 1:
         return present[0]
 
+    return "npm"
+
+
+def _declared_package_manager(package_json: dict) -> str | None:
     package_manager = package_json.get("packageManager")
     if isinstance(package_manager, str):
         name = package_manager.split("@", 1)[0]
         if name in {"npm", "pnpm", "yarn"}:
             return name
-
-    return "npm"
+    return None
 
 
 def _install_command(package_manager: str) -> str:

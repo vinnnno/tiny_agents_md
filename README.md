@@ -1,10 +1,11 @@
 # tiny-agents-md
 
-A no-LLM `AGENTS.md` doctor and generator that refuses to invent commands or
-paths.
+Keep `AGENTS.md` small, factual, and safe.
+
+Generate and audit minimal agent instruction files without an LLM.
 
 ```bash
-$ tiny-agents-md doctor . --explain
+$ python -m tiny_agents_md doctor . --explain
 
 AGENTS.md Health Report
 
@@ -15,15 +16,30 @@ Rating: excellent
 Issues: none
 
 Valid Commands:
-- `python -m unittest discover -v` from Makefile:test
+- `make agents` from Makefile:agents
+- `make doctor` from Makefile:doctor
+- `make install` from Makefile:install
+- `make lint` from Makefile:lint
+- `make test` from Makefile:test
 - `python -m compileall tiny_agents_md tests` from Makefile:lint
+- `python -m pip install -e .` from Makefile:install
+- `python -m tiny_agents_md doctor . --explain` from Makefile:doctor
+- `python -m tiny_agents_md loop .` from Makefile:agents
+- `python -m unittest discover -v` from Makefile:test
 
 Valid Paths:
+- `skills/` (config)
 - `tiny_agents_md/` (source)
 - `tests/` (tests)
 ```
 
-Generate a minimal file when you need one:
+Preview a generated file when you need one:
+
+```bash
+$ python -m tiny_agents_md init .
+```
+
+Write only when you are ready:
 
 ```bash
 $ tiny-agents-md init . --write
@@ -55,6 +71,9 @@ a score with concrete issues.
 The first version is deterministic and local-only. It does not call an LLM,
 embedding API, MCP server, or remote model.
 
+Python command detection is intentionally conservative: it only emits commands
+that are backed by recognized project files or Makefile targets.
+
 ## Install
 
 Requires Python 3.11+.
@@ -82,9 +101,13 @@ python -m tiny_agents_md doctor . --explain
 Generate `AGENTS.md`:
 
 ```bash
+tiny-agents-md init .
 tiny-agents-md init . --dry-run
 tiny-agents-md init . --write
 ```
+
+`init` previews a diff by default. `--write` creates `AGENTS.md` when it does
+not exist. If `AGENTS.md` already exists, use `--write --force` to overwrite it.
 
 Check an existing file:
 
@@ -136,6 +159,7 @@ tiny-agents-md loop .
 ## CLI
 
 - `init`: scan repository files and render a minimal `AGENTS.md`
+- `init --write --force`: overwrite an existing generated file intentionally
 - `doctor`: check an existing agent instruction file for factual issues
 - `loop`: regenerate, run `doctor`, and stop when the file is stable
 

@@ -305,6 +305,7 @@ def _has_package_manager_conflict(facts: RepoFacts) -> bool:
 
 
 def _js_package_manager(root: Path, package_json: dict) -> str | None:
+    declared = _declared_package_manager(package_json)
     present = [
         name
         for name, filename in (
@@ -316,16 +317,23 @@ def _js_package_manager(root: Path, package_json: dict) -> str | None:
     ]
     if len(present) > 1:
         return None
+    if declared and present and declared != present[0]:
+        return None
+    if declared:
+        return declared
     if len(present) == 1:
         return present[0]
 
+    return "npm"
+
+
+def _declared_package_manager(package_json: dict) -> str | None:
     package_manager = package_json.get("packageManager")
     if isinstance(package_manager, str):
         name = package_manager.split("@", 1)[0]
         if name in {"npm", "pnpm", "yarn"}:
             return name
-
-    return "npm"
+    return None
 
 
 def _valid_makefile_commands(root: Path) -> set[str]:

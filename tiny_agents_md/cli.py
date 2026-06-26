@@ -40,12 +40,17 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print a unified diff instead of writing AGENTS.md.",
+        help="Print a unified diff instead of writing AGENTS.md. This is the default.",
     )
     init_parser.add_argument(
         "--write",
         action="store_true",
-        help="Write AGENTS.md. This is the default unless --dry-run is used.",
+        help="Write AGENTS.md when it does not already exist.",
+    )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow --write to overwrite an existing AGENTS.md.",
     )
     init_parser.add_argument(
         "--format",
@@ -102,6 +107,9 @@ def _run_init(args: argparse.Namespace) -> int:
     if args.dry_run and args.write:
         print("error: choose either --dry-run or --write, not both", file=sys.stderr)
         return 2
+    if args.force and not args.write:
+        print("error: --force requires --write", file=sys.stderr)
+        return 2
 
     root = Path(args.path).resolve()
     if not root.exists() or not root.is_dir():
@@ -115,9 +123,16 @@ def _run_init(args: argparse.Namespace) -> int:
         print(f"Warning: {warning}", file=sys.stderr)
 
     target = root / "AGENTS.md"
-    if args.dry_run:
+    if args.dry_run or not args.write:
         _print_diff(target, content)
         return 0
+
+    if target.exists() and not args.force:
+        print(
+            f"error: {target} already exists; use --dry-run to preview or --write --force to overwrite",
+            file=sys.stderr,
+        )
+        return 1
 
     target.write_text(content, encoding="utf-8")
     print(f"Wrote {target}")
