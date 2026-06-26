@@ -81,7 +81,7 @@ Requires Python 3.11+.
 From GitHub:
 
 ```bash
-pipx install git+https://github.com/vinnnno/tiny_agents_md.git
+pipx install git+https://github.com/vinnnno/tiny-agents-md.git
 ```
 
 From a local checkout:
