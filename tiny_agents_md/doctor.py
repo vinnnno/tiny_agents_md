@@ -46,58 +46,137 @@ class DoctorIssue:
 
 
 @dataclass(frozen=True)
+class DoctorCommandEvidence:
+    command: str
+    sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DoctorPathEvidence:
+    path: str
+    kind: str
+    exists: bool = True
+
+
+@dataclass(frozen=True)
 class DoctorReport:
+    file: str
     score: int
     rating: str
     issues: tuple[DoctorIssue, ...]
+    valid_commands: tuple[DoctorCommandEvidence, ...] = ()
+    valid_paths: tuple[DoctorPathEvidence, ...] = ()
 
-    def to_dict(self) -> dict:
-        return {
+    def to_dict(self, include_explain: bool = False) -> dict:
+        data = {
+            "file": self.file,
             "score": self.score,
             "rating": self.rating,
             "issues": [asdict(issue) for issue in self.issues],
         }
+        if include_explain:
+            data["validCommands"] = [
+                asdict(command) for command in self.valid_commands
+            ]
+            data["validPaths"] = [asdict(path) for path in self.valid_paths]
+        return data
 
 
-def run_doctor(root: str | Path) -> DoctorReport:
+def run_doctor(root: str | Path, file_path: str | Path = "AGENTS.md") -> DoctorReport:
     root_path = Path(root).resolve()
     facts = scan_repo(root_path)
-    agents_path = root_path / "AGENTS.md"
+    target_path = _resolve_target_path(root_path, file_path)
+    display_file = _display_path(root_path, target_path)
+    valid_commands = _command_evidence(root_path, facts)
+    valid_paths = _path_evidence(facts)
 
-    if not agents_path.exists():
+    if not _is_inside(root_path, target_path):
         return DoctorReport(
+            file=display_file,
+            score=0,
+            rating="misleading",
+            issues=(
+                DoctorIssue(
+                    code="file_outside_repo",
+                    severity="critical",
+                    message=f"{display_file} is outside the repository root",
+                    deduction=100,
+                    suggestion="choose an instruction file inside the repository",
+                ),
+            ),
+            valid_commands=valid_commands,
+            valid_paths=valid_paths,
+        )
+
+    if not target_path.exists():
+        return DoctorReport(
+            file=display_file,
             score=0,
             rating="misleading",
             issues=(
                 DoctorIssue(
                     code="missing_agents_md",
                     severity="critical",
-                    message="AGENTS.md is missing",
+                    message=f"{display_file} is missing",
                     deduction=100,
                     suggestion="run `tiny-agents-md init . --write`",
                 ),
             ),
+            valid_commands=valid_commands,
+            valid_paths=valid_paths,
         )
 
     try:
-        content = agents_path.read_text(encoding="utf-8")
+        content = target_path.read_text(encoding="utf-8")
     except OSError as exc:
         return DoctorReport(
+            file=display_file,
             score=0,
             rating="misleading",
             issues=(
                 DoctorIssue(
                     code="unreadable_agents_md",
                     severity="critical",
-                    message=f"AGENTS.md could not be read: {exc}",
+                    message=f"{display_file} could not be read: {exc}",
                     deduction=100,
                 ),
             ),
+            valid_commands=valid_commands,
+            valid_paths=valid_paths,
         )
 
     issues = _collect_issues(root_path, facts, content)
     score = max(0, 100 - sum(issue.deduction for issue in issues))
-    return DoctorReport(score=score, rating=_rating(score), issues=tuple(issues))
+    return DoctorReport(
+        file=display_file,
+        score=score,
+        rating=_rating(score),
+        issues=tuple(issues),
+        valid_commands=valid_commands,
+        valid_paths=valid_paths,
+    )
+
+
+def _resolve_target_path(root: Path, file_path: str | Path) -> Path:
+    target = Path(file_path)
+    if not target.is_absolute():
+        target = root / target
+    return target.resolve()
+
+
+def _display_path(root: Path, target: Path) -> str:
+    try:
+        return target.relative_to(root).as_posix()
+    except ValueError:
+        return target.as_posix()
+
+
+def _is_inside(root: Path, target: Path) -> bool:
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _collect_issues(root: Path, facts: RepoFacts, content: str) -> list[DoctorIssue]:
@@ -151,40 +230,73 @@ def _add_invalid_command_issues(
 
 
 def _valid_repository_commands(root: Path, facts: RepoFacts) -> set[str]:
-    commands = {command.command for command in facts.commands}
-    commands.update(_valid_package_json_commands(root, facts))
-    commands.update(_valid_makefile_commands(root))
-    commands.update(_valid_rust_commands(root))
-    commands.update(_valid_go_commands(root))
-    return commands
+    return {command.command for command in _command_evidence(root, facts)}
+
+
+def _command_evidence(root: Path, facts: RepoFacts) -> tuple[DoctorCommandEvidence, ...]:
+    evidence: dict[str, set[str]] = {}
+
+    def add(command: str, source: str) -> None:
+        evidence.setdefault(command, set()).add(source)
+
+    for command in facts.commands:
+        add(command.command, command.source)
+
+    for command, source in _valid_package_json_command_sources(root, facts).items():
+        add(command, source)
+    for command, source in _valid_makefile_command_sources(root).items():
+        add(command, source)
+    for command, source in _valid_rust_command_sources(root).items():
+        add(command, source)
+    for command, source in _valid_go_command_sources(root).items():
+        add(command, source)
+
+    return tuple(
+        DoctorCommandEvidence(command=command, sources=tuple(sorted(sources)))
+        for command, sources in sorted(evidence.items())
+    )
+
+
+def _path_evidence(facts: RepoFacts) -> tuple[DoctorPathEvidence, ...]:
+    evidence: list[DoctorPathEvidence] = []
+    for kind in ("source", "tests", "docs", "config", "generated"):
+        paths = getattr(facts.paths, kind)
+        for path in paths:
+            evidence.append(DoctorPathEvidence(path=path, kind=kind))
+    return tuple(sorted(evidence, key=lambda item: (item.kind, item.path)))
 
 
 def _valid_package_json_commands(root: Path, facts: RepoFacts) -> set[str]:
+    return set(_valid_package_json_command_sources(root, facts))
+
+
+def _valid_package_json_command_sources(root: Path, facts: RepoFacts) -> dict[str, str]:
     package_json = root / "package.json"
     if not package_json.exists() or _has_package_manager_conflict(facts):
-        return set()
+        return {}
 
     try:
         data = json.loads(package_json.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
-        return set()
+        return {}
 
     scripts = data.get("scripts")
     if not isinstance(scripts, dict):
-        return set()
+        return {}
 
     package_manager = _js_package_manager(root, data)
     if package_manager is None:
-        return set()
+        return {}
 
-    commands: set[str] = set()
+    commands: dict[str, str] = {}
     for script in scripts:
+        source = f"package.json:scripts.{script}"
         if package_manager == "npm":
-            commands.add(f"npm run {script}")
+            commands[f"npm run {script}"] = source
             if script in {"test", "start"}:
-                commands.add(f"npm {script}")
+                commands[f"npm {script}"] = source
         else:
-            commands.add(f"{package_manager} {script}")
+            commands[f"{package_manager} {script}"] = source
     return commands
 
 
@@ -217,35 +329,55 @@ def _js_package_manager(root: Path, package_json: dict) -> str | None:
 
 
 def _valid_makefile_commands(root: Path) -> set[str]:
+    return set(_valid_makefile_command_sources(root))
+
+
+def _valid_makefile_command_sources(root: Path) -> dict[str, str]:
     makefile = root / "Makefile"
     if not makefile.exists():
-        return set()
+        return {}
 
     try:
         content = makefile.read_text(encoding="utf-8")
     except OSError:
-        return set()
+        return {}
 
-    commands: set[str] = set()
+    commands: dict[str, str] = {}
     target_re = re.compile(r"^([A-Za-z_][\w.-]*)\s*:", re.MULTILINE)
     for match in target_re.finditer(content):
         target = match.group(1)
         if target.startswith(".") or target.startswith("_"):
             continue
-        commands.add(f"make {target}")
+        commands[f"make {target}"] = f"Makefile:{target}"
     return commands
 
 
 def _valid_rust_commands(root: Path) -> set[str]:
+    return set(_valid_rust_command_sources(root))
+
+
+def _valid_rust_command_sources(root: Path) -> dict[str, str]:
     if not (root / "Cargo.toml").exists():
-        return set()
-    return {"cargo build", "cargo test", "cargo run", "cargo check"}
+        return {}
+    return {
+        "cargo build": "Cargo.toml",
+        "cargo test": "Cargo.toml",
+        "cargo run": "Cargo.toml",
+        "cargo check": "Cargo.toml",
+    }
 
 
 def _valid_go_commands(root: Path) -> set[str]:
+    return set(_valid_go_command_sources(root))
+
+
+def _valid_go_command_sources(root: Path) -> dict[str, str]:
     if not (root / "go.mod").exists():
-        return set()
-    return {"go test ./...", "go build ./..."}
+        return {}
+    return {
+        "go test ./...": "go.mod",
+        "go build ./...": "go.mod",
+    }
 
 
 def _add_missing_test_issue(

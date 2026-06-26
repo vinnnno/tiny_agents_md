@@ -24,6 +24,9 @@ hand-written guidance stays factual.
 python -m tiny_agents_md init . --dry-run
 python -m tiny_agents_md init . --write
 python -m tiny_agents_md doctor .
+python -m tiny_agents_md doctor . --file CLAUDE.md
+python -m tiny_agents_md doctor . --min-score 90
+python -m tiny_agents_md doctor . --json --explain
 python -m tiny_agents_md loop .
 ```
 
@@ -33,6 +36,9 @@ After installation, the console script is also available:
 tiny-agents-md init . --dry-run
 tiny-agents-md init . --write
 tiny-agents-md doctor .
+tiny-agents-md doctor . --file CLAUDE.md
+tiny-agents-md doctor . --min-score 90
+tiny-agents-md doctor . --json --explain
 tiny-agents-md loop .
 ```
 
@@ -53,6 +59,11 @@ repository.
 `doctor` checks whether an existing `AGENTS.md` is factual and useful enough for
 coding agents: commands must be traceable, paths must exist, package managers
 must match, and generic boilerplate is flagged.
+
+`doctor --file <path>` checks another instruction file, such as `CLAUDE.md`,
+against the same repository facts. `doctor --min-score <n>` changes the exit-code
+threshold. `doctor --explain` adds the detected command and path evidence; with
+`--json`, that provenance is machine-readable.
 
 `loop` keeps the no-LLM workflow self-checking: regenerate `AGENTS.md`, run
 `doctor`, and stop only when the file is stable and the score meets the

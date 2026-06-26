@@ -61,6 +61,22 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print a machine-readable JSON report.",
     )
+    doctor_parser.add_argument(
+        "--file",
+        default="AGENTS.md",
+        help="Instruction file to check, relative to the repository root.",
+    )
+    doctor_parser.add_argument(
+        "--min-score",
+        type=int,
+        default=75,
+        help="Minimum doctor score required for a zero exit code.",
+    )
+    doctor_parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Include detected command and path evidence in the report.",
+    )
 
     loop_parser = subparsers.add_parser(
         "loop",
@@ -113,36 +129,61 @@ def _run_doctor(args: argparse.Namespace) -> int:
     if not root.exists() or not root.is_dir():
         print(f"error: not a directory: {root}", file=sys.stderr)
         return 2
+    if args.min_score < 0 or args.min_score > 100:
+        print("error: --min-score must be between 0 and 100", file=sys.stderr)
+        return 2
 
-    report = run_doctor(root)
+    report = run_doctor(root, args.file)
     if args.json:
-        print(json.dumps(report.to_dict(), indent=2))
+        print(json.dumps(report.to_dict(include_explain=args.explain), indent=2))
     else:
-        _print_doctor_report(report)
-    return 0 if report.score >= 75 else 1
+        _print_doctor_report(report, explain=args.explain)
+    return 0 if report.score >= args.min_score else 1
 
 
-def _print_doctor_report(report: DoctorReport) -> None:
+def _print_doctor_report(report: DoctorReport, explain: bool = False) -> None:
     print("AGENTS.md Health Report")
     print()
+    print(f"File: {report.file}")
     print(f"Score: {report.score}/100")
     print(f"Rating: {report.rating}")
     print()
 
     if not report.issues:
         print("Issues: none")
-        return
+    else:
+        print("Issues:")
+        for issue in report.issues:
+            print(f"- {issue.message}")
 
-    print("Issues:")
-    for issue in report.issues:
-        print(f"- {issue.message}")
+        suggestions = [issue.suggestion for issue in report.issues if issue.suggestion]
+        if suggestions:
+            print()
+            print("Suggestions:")
+            for suggestion in dict.fromkeys(suggestions):
+                print(f"- {suggestion}")
 
-    suggestions = [issue.suggestion for issue in report.issues if issue.suggestion]
-    if suggestions:
-        print()
-        print("Suggestions:")
-        for suggestion in dict.fromkeys(suggestions):
-            print(f"- {suggestion}")
+    if explain:
+        _print_doctor_explain(report)
+
+
+def _print_doctor_explain(report: DoctorReport) -> None:
+    print()
+    print("Valid Commands:")
+    if report.valid_commands:
+        for command in report.valid_commands:
+            sources = ", ".join(command.sources)
+            print(f"- `{command.command}` from {sources}")
+    else:
+        print("- none detected")
+
+    print()
+    print("Valid Paths:")
+    if report.valid_paths:
+        for path in report.valid_paths:
+            print(f"- `{path.path}` ({path.kind})")
+    else:
+        print("- none detected")
 
 
 def _run_loop(args: argparse.Namespace) -> int:

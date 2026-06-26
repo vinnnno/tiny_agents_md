@@ -301,6 +301,24 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(report.rating, "excellent")
             self.assertEqual(report.issues, ())
 
+    def test_doctor_accepts_alternate_instruction_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Makefile").write_text("test:\n\tpython -m unittest\n", encoding="utf-8")
+            _mkdirs(root, "tests")
+            facts = scan_repo(root)
+            (root / "CLAUDE.md").write_text(render_agents_md(facts), encoding="utf-8")
+            stdout = io.StringIO()
+
+            report = run_doctor(root, "CLAUDE.md")
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(["doctor", str(root), "--file", "CLAUDE.md"])
+
+            self.assertEqual(report.file, "CLAUDE.md")
+            self.assertEqual(report.score, 100)
+            self.assertEqual(exit_code, 0)
+            self.assertIn("File: CLAUDE.md", stdout.getvalue())
+
     def test_doctor_reports_invalid_commands_paths_and_boilerplate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -465,6 +483,69 @@ cargo check
 
             self.assertNotIn("invalid_command", codes)
 
+    def test_doctor_cli_min_score_controls_exit_code(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text(
+                """
+# AGENTS.md
+
+## Agent Rules
+- This is a project.
+""".lstrip(),
+                encoding="utf-8",
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                passing = main(["doctor", str(root), "--min-score", "95"])
+            with contextlib.redirect_stdout(io.StringIO()):
+                failing = main(["doctor", str(root), "--min-score", "96"])
+
+            self.assertEqual(passing, 0)
+            self.assertEqual(failing, 1)
+
+    def test_doctor_cli_rejects_bad_min_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr):
+                exit_code = main(["doctor", str(root), "--min-score", "101"])
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("--min-score must be between 0 and 100", stderr.getvalue())
+
+    def test_doctor_json_explain_includes_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Makefile").write_text("test:\n\tpython -m unittest\n", encoding="utf-8")
+            _mkdirs(root, "tests")
+            facts = scan_repo(root)
+            (root / "AGENTS.md").write_text(render_agents_md(facts), encoding="utf-8")
+            stdout = io.StringIO()
+
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(["doctor", str(root), "--json", "--explain"])
+
+            self.assertEqual(exit_code, 0)
+            data = json.loads(stdout.getvalue())
+            self.assertEqual(data["file"], "AGENTS.md")
+            self.assertIn(
+                {
+                    "command": "python -m unittest",
+                    "sources": ["Makefile:test"],
+                },
+                data["validCommands"],
+            )
+            self.assertIn(
+                {
+                    "path": "tests/",
+                    "kind": "tests",
+                    "exists": True,
+                },
+                data["validPaths"],
+            )
+
     def test_doctor_cli_json_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -475,6 +556,7 @@ cargo check
 
             self.assertEqual(exit_code, 1)
             data = json.loads(stdout.getvalue())
+            self.assertEqual(data["file"], "AGENTS.md")
             self.assertEqual(data["score"], 0)
             self.assertEqual(data["issues"][0]["code"], "missing_agents_md")
 
