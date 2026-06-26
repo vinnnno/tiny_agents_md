@@ -20,13 +20,13 @@ Review agent instruction files as operational guidance, not prose documentation.
 3. Run the local hard checker when available:
 
    ```bash
-   tiny-agents-md doctor . --json
+   tiny-agents-md doctor . --json --explain
    ```
 
    If the console script is unavailable inside the `tiny-agents-md` repo, use:
 
    ```bash
-   python -m tiny_agents_md doctor . --json
+   python -m tiny_agents_md doctor . --json --explain
    ```
 
    Treat this output as evidence for factual issues. If neither command is available, manually inspect the same evidence from repo files.

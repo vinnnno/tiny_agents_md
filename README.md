@@ -1,96 +1,118 @@
 # tiny-agents-md
 
-A no-LLM `AGENTS.md` generator and doctor that refuses to invent commands or
+A no-LLM `AGENTS.md` doctor and generator that refuses to invent commands or
 paths.
 
-Status: early MVP. Supports JS/TS, Python, Rust, Go, and Makefile-based command
-signals.
+```bash
+$ tiny-agents-md doctor . --explain
+
+AGENTS.md Health Report
+
+File: AGENTS.md
+Score: 100/100
+Rating: excellent
+
+Issues: none
+
+Valid Commands:
+- `python -m unittest discover -v` from Makefile:test
+- `python -m compileall tiny_agents_md tests` from Makefile:lint
+
+Valid Paths:
+- `tiny_agents_md/` (source)
+- `tests/` (tests)
+```
+
+Generate a minimal file when you need one:
+
+```bash
+$ tiny-agents-md init . --write
+```
 
 ## Why
 
-`AGENTS.md` should help coding agents do the right thing quickly:
+Agent instruction files usually fail in boring ways:
 
-- run real commands
-- inspect real paths
-- avoid generated files
-- avoid stale or generic project prose
+- they mention commands that do not exist
+- they reference stale paths
+- they copy generic project prose
+- they grow too long for coding agents to use well
 
-`tiny-agents-md` keeps the file small by default and checks that generated or
-hand-written guidance stays factual.
+`tiny-agents-md` keeps `AGENTS.md` small, factual, and checkable. It scans the
+repository, writes only facts it can verify, and gives existing instruction files
+a score with concrete issues.
+
+## What It Checks
+
+- commands from `package.json`, `pyproject.toml`, `Makefile`, `Cargo.toml`, and
+  `go.mod`
+- real project paths such as source, test, docs, config, and generated dirs
+- package-manager conflicts such as npm vs pnpm vs yarn
+- missing test commands
+- generic boilerplate and README duplication
+- generated directories without a do-not-edit rule
+
+The first version is deterministic and local-only. It does not call an LLM,
+embedding API, MCP server, or remote model.
+
+## Install
+
+Requires Python 3.11+.
+
+From GitHub:
+
+```bash
+pipx install git+https://github.com/vinnnno/tiny_agents_md.git
+```
+
+From a local checkout:
+
+```bash
+python -m pip install -e .
+```
+
+You can also run it without installing:
+
+```bash
+python -m tiny_agents_md doctor . --explain
+```
 
 ## Usage
 
-```bash
-python -m tiny_agents_md init . --dry-run
-python -m tiny_agents_md init . --write
-python -m tiny_agents_md doctor .
-python -m tiny_agents_md doctor . --file CLAUDE.md
-python -m tiny_agents_md doctor . --min-score 90
-python -m tiny_agents_md doctor . --json --explain
-python -m tiny_agents_md loop .
-```
-
-After installation, the console script is also available:
+Generate `AGENTS.md`:
 
 ```bash
 tiny-agents-md init . --dry-run
 tiny-agents-md init . --write
+```
+
+Check an existing file:
+
+```bash
 tiny-agents-md doctor .
-tiny-agents-md doctor . --file CLAUDE.md
-tiny-agents-md doctor . --min-score 90
+tiny-agents-md doctor . --explain
 tiny-agents-md doctor . --json --explain
+```
+
+Check another instruction file against the same repo facts:
+
+```bash
+tiny-agents-md doctor . --file CLAUDE.md
+```
+
+Use a stricter exit-code threshold:
+
+```bash
+tiny-agents-md doctor . --min-score 90
+```
+
+Regenerate and check until the file is stable:
+
+```bash
 tiny-agents-md loop .
 ```
 
-The first version uses static repository facts only. It does not call LLM APIs.
-
-## No-LLM core
-
-The CLI is deterministic and local-only:
-
-- `init` scans repository files and renders `AGENTS.md`
-- `doctor` checks an existing `AGENTS.md` for factual issues
-- `loop` regenerates, checks, and stops when the file is stable
-
-No command calls an LLM, embedding API, MCP server, or remote model. Commands,
-paths, and package-manager choices come from files already present in the
-repository.
-
-`doctor` checks whether an existing `AGENTS.md` is factual and useful enough for
-coding agents: commands must be traceable, paths must exist, package managers
-must match, and generic boilerplate is flagged.
-
-`doctor --file <path>` checks another instruction file, such as `CLAUDE.md`,
-against the same repository facts. `doctor --min-score <n>` changes the exit-code
-threshold. `doctor --explain` adds the detected command and path evidence; with
-`--json`, that provenance is machine-readable.
-
-`loop` keeps the no-LLM workflow self-checking: regenerate `AGENTS.md`, run
-`doctor`, and stop only when the file is stable and the score meets the
-threshold.
-
-The `skills/` directory contains optional Codex companion skills. They should
-orchestrate `tiny-agents-md` commands rather than hand-writing generated
-content.
-
-## Optional skill workflow
-
-The repository also includes two optional Codex skills:
-
-- `skills/agents-md-generate`: runs the deterministic CLI loop and reports
-  whether it converged.
-- `skills/agents-md-review`: reviews an agent instruction file using
-  `doctor --json` as hard evidence, then comments on usefulness and minimality.
-
-The skills are not a second generator. They should not manually compose
-`AGENTS.md` content unless a user explicitly asks for a manual edit. The safe
-path is:
-
-```text
-agents-md-generate -> tiny-agents-md loop -> agents-md-review
-```
-
-Example output:
+## Example Output
 
 ```md
 # AGENTS.md
@@ -111,9 +133,40 @@ Example output:
 - Do not invent commands or file paths.
 ```
 
+## CLI
+
+- `init`: scan repository files and render a minimal `AGENTS.md`
+- `doctor`: check an existing agent instruction file for factual issues
+- `loop`: regenerate, run `doctor`, and stop when the file is stable
+
+Supported signals in the MVP:
+
+- JS/TS: `package.json` scripts and npm/pnpm/yarn lockfiles
+- Python: `pyproject.toml`, pytest config, ruff config, uv/poetry lockfiles
+- Rust: `Cargo.toml`
+- Go: `go.mod`
+- Makefile targets: `install`, `test`, `lint`, `build`, `doctor`, `agents`
+
+## Optional Skill Workflow
+
+The repository includes two optional Codex companion skills:
+
+- `skills/agents-md-generate`: runs the deterministic CLI loop and reports
+  whether it converged.
+- `skills/agents-md-review`: reviews an agent instruction file using
+  `doctor --json --explain` as hard evidence, then comments on usefulness and
+  minimality.
+
+The skills are not a second generator. The safe path is:
+
+```text
+agents-md-generate -> tiny-agents-md loop -> agents-md-review
+```
+
 ## Development
 
 ```bash
 python -m unittest discover -v
 python -m compileall tiny_agents_md tests
+python -m tiny_agents_md doctor . --explain
 ```
