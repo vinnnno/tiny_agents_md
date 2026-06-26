@@ -1,0 +1,4 @@
+interface:
+  display_name: "AGENTS.md Review"
+  short_description: "Review AGENTS.md for factual accuracy and agent usefulness."
+  default_prompt: "Use $agents-md-review to review this repository's AGENTS.md and suggest a minimal patch."

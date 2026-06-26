@@ -1,0 +1,4 @@
+interface:
+  display_name: "AGENTS.md Generate"
+  short_description: "Generate or refresh minimal, verifiable AGENTS.md files."
+  default_prompt: "Use $agents-md-generate to refresh this repository's AGENTS.md with tiny-agents-md."
