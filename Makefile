@@ -8,7 +8,7 @@ lint:
 	python -m compileall tiny_agents_md tests
 
 doctor:
-	python -m tiny_agents_md doctor .
+	python -m tiny_agents_md doctor . --explain
 
 agents:
 	python -m tiny_agents_md loop .

@@ -4,7 +4,7 @@
 - Install: `python -m pip install -e .`
 - Test: `python -m unittest discover -v`
 - Lint: `python -m compileall tiny_agents_md tests`
-- Doctor: `python -m tiny_agents_md doctor .`
+- Doctor: `python -m tiny_agents_md doctor . --explain`
 - Check Agents: `python -m tiny_agents_md loop .`
 
 ## Project Structure
